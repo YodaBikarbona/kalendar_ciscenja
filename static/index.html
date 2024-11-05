@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cleaning</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+    <div class="container">
+        <h1 id="welcomeText">Please Login or Register</h1>
+        <div id="authButtons" class="button-container">
+            <button onclick="showLogin()">Login</button>
+            <button onclick="showRegister()">Register</button>
+        </div>
+
+        <div id="loginForm" class="form-container hidden">
+            <h2>Login</h2>
+            <label>Username:</label>
+            <input type="text" id="loginUsername" required><br><br>
+            <label>Password:</label>
+            <input type="password" id="loginPassword" required><br><br>
+            <button onclick="login()">Login</button>
+        </div>
+
+        <div id="registerForm" class="form-container hidden">
+            <h2>Register</h2>
+            <label>Username:</label>
+            <input type="text" id="registerUsername" required><br><br>
+            <label>Password:</label>
+            <input type="password" id="registerPassword" required><br><br>
+            <label>Confirm Password:</label>
+            <input type="password" id="registerConfirmPassword" required><br><br>
+            <button onclick="register()">Register</button>
+        </div>
+    </div>
+
+    <div id="calendarTable" class="calendar-table hidden">
+        <div class="date-picker-container">
+            <label for="dateFrom">Date From:</label>
+            <input type="date" id="dateFrom">
+            <label for="dateTo">Date To:</label>
+            <input type="date" id="dateTo">
+            <button onclick="fetchCalendars()">Fetch Calendars</button>
+        </div>
+        <div id="noCalendarsMessage" class="hidden noCalendarsMessage">
+            <p>No calendars available.</p>
+        </div>
+        <table id="calendar-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        function showLogin() {
+            document.getElementById('loginForm').classList.remove('hidden');
+            document.getElementById('registerForm').classList.add('hidden');
+        }
+
+        function showRegister() {
+            document.getElementById('loginForm').classList.add('hidden');
+            document.getElementById('registerForm').classList.remove('hidden');
+        }
+
+        async function login() {
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+
+            const response = await fetch('/api/v1/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                alert(data.message);
+                sessionStorage.setItem('authToken', data.data.access_token);
+
+                document.getElementById('loginForm').classList.add('hidden');
+                document.getElementById('registerForm').classList.add('hidden');
+                document.getElementById('welcomeText').classList.add('hidden');
+                document.getElementById('authButtons').classList.add('hidden');
+
+                document.getElementById('calendarTable').classList.remove('hidden');
+                fetchCalendars();
+            } else {
+                alert(data.message);
+            }
+        }
+
+        async function register() {
+            const username = document.getElementById('registerUsername').value;
+            const password = document.getElementById('registerPassword').value;
+            const confirmPassword = document.getElementById('registerConfirmPassword').value;
+
+            if (password !== confirmPassword) {
+                alert("Passwords do not match.");
+                return;
+            }
+
+            const response = await fetch('/api/v1/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password , confirm_password: confirmPassword })
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+                alert(data.message);
+            } else {
+                alert(data.message);
+            }
+        }
+
+        async function fetchCalendars() {
+            try {
+                const token = sessionStorage.getItem('authToken');
+                const dateFrom = document.getElementById('dateFrom').value;
+                const dateTo = document.getElementById('dateTo').value;
+
+                let url = '/api/v1/calendars';
+                const params = new URLSearchParams();
+                if (dateFrom) params.append('date_from', dateFrom);
+                if (dateTo) params.append('date_to', dateTo);
+                if (params.toString()) url += '?' + params.toString();
+
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+
+                if (data.code === 200) {
+                    generateTable(data.data);
+                } else {
+                    console.error("Failed to fetch data:", data.message);
+                }
+            } catch (error) {
+                console.error("Error fetching calendars:", error);
+            }
+        }
+
+        function generateTable(data) {
+            const table = document.getElementById('calendar-table');
+            const tbody = table.querySelector('tbody');
+            const noCalendarsMessage = document.getElementById('noCalendarsMessage');
+
+            tbody.innerHTML = '';
+
+            if (!data || !data.apartments || data.apartments.length === 0) {
+                table.classList.add('hidden');
+                noCalendarsMessage.classList.remove('hidden');
+                return;
+            }
+
+            table.classList.remove('hidden');
+            noCalendarsMessage.classList.add('hidden');
+
+            const headersRow = table.querySelector('thead tr');
+            headersRow.innerHTML = '<th>Date</th>';
+
+            data.apartments.forEach(calendar => {
+                const th = document.createElement('th');
+                th.textContent = calendar.trim();
+                headersRow.appendChild(th);
+            });
+
+            data.dates.forEach((date, index) => {
+                const events = data.events[index] || [];
+                const maxEvents = Math.max(...data.apartments.map((_, i) => events.filter(event => event.name.trim() === data.apartments[i].trim()).length));
+
+                for (let i = 0; i < maxEvents; i++) {
+                    const tr = document.createElement('tr');
+                    const dateCell = document.createElement('td');
+                    dateCell.textContent = i === 0 ? date : '';
+                    tr.appendChild(dateCell);
+
+                    data.apartments.forEach((calendar, calendarIndex) => {
+                        const cell = document.createElement('td');
+                        const eventForCalendar = events.filter(event => event.name.trim() === calendar.trim());
+                        const event = eventForCalendar[i];
+
+                        if (event) {
+                            let text = '';
+                            if (event.cleaning) {
+                                text = event.begin ? 'Cleaning/Enter' : 'Out/Cleaning';
+                            } else {
+                                text = event.free ? (event.end ? 'Out' : 'Free') : (event.taken ? (event.begin ? 'Enter' : 'Taken') : '');
+                            }
+                            cell.textContent = text;
+                        } else {
+                            cell.textContent = '';
+                        }
+                        tr.appendChild(cell);
+                    });
+
+                    tbody.appendChild(tr);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
