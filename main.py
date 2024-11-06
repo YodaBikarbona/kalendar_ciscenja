@@ -1,5 +1,3 @@
-import uvicorn
-
 from api.app import app
 from api.base.database_connector import initialize_database
 
@@ -13,7 +11,4 @@ app.include_router(login_router)
 app.include_router(calendar_router)
 app.include_router(apartment_router)
 
-
-if __name__ == "__main__":
-    initialize_database()
-    uvicorn.run(app=app, port=8000, log_level="info")
+initialize_database()

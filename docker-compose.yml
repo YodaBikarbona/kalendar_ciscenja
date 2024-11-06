@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DEBUG: "False"
+      ROUTE: "/api/v1"
+      DESCRIPTION: "RestAPI Service"
+      SERVER_TYPE: "${SERVER_TYPE}"
+      DRIVER_NAME: "postgresql://"
+      DATABASE_TYPE: "postgresql"
+      USERNAME: "${USERNAME}"
+      PASSWORD: "${PASSWORD}"
+      HOST: "${HOST}"
+      PORT: "${PORT}"
+      DATABASE: "${DATABASE}"
+      JWT_ACCESS_SECRET_KEY: "${JWT_ACCESS_SECRET_KEY}"
+      JWT_REFRESH_SECRET_KEY: "${JWT_REFRESH_SECRET_KEY}"
+    depends_on:
+      - db
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: "${USERNAME}"
+      POSTGRES_PASSWORD: "${PASSWORD}"
+      POSTGRES_DB: "${DATABASE}"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

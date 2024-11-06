@@ -150,15 +150,12 @@
             const table = document.getElementById('calendar-table');
             const tbody = table.querySelector('tbody');
             const noCalendarsMessage = document.getElementById('noCalendarsMessage');
-
             tbody.innerHTML = '';
-
-            if (!data || !data.apartments || data.apartments.length === 0) {
+            if ((data && data.events.length === 0) || !data) {
                 table.classList.add('hidden');
                 noCalendarsMessage.classList.remove('hidden');
                 return;
             }
-
             table.classList.remove('hidden');
             noCalendarsMessage.classList.add('hidden');
 
@@ -189,7 +186,13 @@
                         if (event) {
                             let text = '';
                             if (event.cleaning) {
-                                text = event.begin ? 'Cleaning/Enter' : 'Out/Cleaning';
+                                if (event.begin) {
+                                    text = 'Cleaning/Enter';
+                                } else if (event.end) {
+                                    text = 'Out/Cleaning';
+                                } else {
+                                    text = 'Cleaning';
+                                }
                             } else {
                                 text = event.free ? (event.end ? 'Out' : 'Free') : (event.taken ? (event.begin ? 'Enter' : 'Taken') : '');
                             }

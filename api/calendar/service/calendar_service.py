@@ -1,4 +1,7 @@
-from datetime import date
+from datetime import (
+    date,
+    datetime,
+)
 from io import StringIO
 from typing import (
     List,
@@ -131,7 +134,6 @@ def make_calendar_structure(events: List[Event], date_from: date | None, date_to
 
 def group_data(dates: List[date], apartments: List[str], data: List[Dict[str, Any]]) -> Dict[str, Any]:
     grouped_data = []
-    cleaned_events = []
     taken_events = []
     free_events = []
     begin_before_range = {d.get('name'): True for d in data if d.get('begin').date() < min(dates)}
@@ -142,9 +144,6 @@ def group_data(dates: List[date], apartments: List[str], data: List[Dict[str, An
             for d in data
             if d.get('begin').date() == single_date or (d.get('end') and d.get('end').date() == single_date)
         ]
-        predict_cleaning(events=events_in_range, cleaned_events=cleaned_events)
-        cleaned_events = [s.get('name') for s in events_in_range if s.get('cleaning')]
-        remove_cleaned_events(events=events_in_range, cleaned_events=cleaned_events)
         update_begin_and_before_range(events=events_in_range, begin_before_range=begin_before_range,
                                       end_before_range=end_before_range)
         make_as_free(events=events_in_range, apartments=apartments, end_before_range=end_before_range,
@@ -156,11 +155,42 @@ def group_data(dates: List[date], apartments: List[str], data: List[Dict[str, An
         grouped_data.append([
             {**event, 'date': event['date'].strftime("%Y-%m-%d")} for event in events_in_range
         ])
-    return {
+    res = {
         'dates': [d.strftime("%Y-%m-%d") for d in sorted(dates)],
         'apartments': apartments,
         'events': grouped_data,
     }
+    cleaning_prediction(res=res)
+    return res
+
+
+def cleaning_prediction(res: dict[str, Any]) -> dict[str, Any]:
+    end, updated = [], []
+    for records in res.get('events', []):
+        updated_records = process_records(records, end)
+        if updated_records:
+            update_cleaning_flags(records, end, updated)
+            end = [e for e in end if e not in updated]
+            updated = []
+    return res
+
+
+def process_records(records: list[dict], end: list[str]) -> bool:
+    update = False
+    for record in records:
+        if record.get('end') and record.get('name') not in end:
+            end.append(record.get('name'))
+        if record.get('begin') and record.get('name') in end:
+            update = True
+    return update
+
+
+def update_cleaning_flags(records: list[dict], end: list[str], updated: list[str]):
+    for e in end:
+        for record in records:
+            if e == record.get('name') and e not in updated:
+                record['cleaning'] = True
+                updated.append(e)
 
 
 def make_as_free(apartments: List[str], free_events: List[str], end_before_range: Dict[str, Any],
@@ -211,8 +241,13 @@ def update_begin_and_before_range(events: List[Dict[str, Any]], begin_before_ran
 
 
 def make_event_structure(_date: date, data: Dict[str, Any]) -> Dict[str, Any]:
-    begin = data.get('begin').date() == _date if data.get('begin') else None
-    end = data.get('end').date() == _date if data.get('end') else None
+    begin = None
+    end = None
+    if isinstance(data.get('begin'), datetime):
+        begin = data.get('begin').date() == _date
+    if isinstance(data.get('end'), datetime):
+        end = data.get('end').date() == _date
+
     taken = begin if begin else data.get('taken', False)
     free = end if end else data.get('free', False)
     return {
@@ -236,38 +271,6 @@ def remove_as_taken(events: List[Dict[str, Any]], taken_events: List[str]):
     remove_taken_events = [event.get('name') for event in events if
                            event.get('name') in taken_events and event.get('end')]
     taken_events[:] = [name for name in taken_events if name not in remove_taken_events]
-
-
-def predict_cleaning(events: List[Dict[str, Any]], cleaned_events: List[str]):
-    _names = list(set([e.get('name') for e in events]))
-    for name in set(_names):
-        event_begin = [e for e in events if e.get('name') == name and e.get('begin')]
-        event_end = [e for e in events if e.get('name') == name and e.get('end')]
-        if len(event_end) > 0 and len(event_begin) == 0:
-            update_cleaning(events=events, cleaned_events=cleaned_events, target_name=name)
-        elif len(event_end) > 0 and len(event_begin) > 0:
-            for e in event_end:
-                e['cleaning'] = True
-
-
-def remove_cleaned_events(events: List[Dict[str, Any]], cleaned_events: List[str]):
-    _names = list(set([e.get('name') for e in events]))
-    remove_events = []
-    for name in set(_names):
-        event_begin = [e for e in events if e.get('name') == name and e.get('begin')]
-        event_end = [e for e in events if e.get('name') == name and e.get('end')]
-        if len(event_end) > 0 and len(event_begin) > 0:
-            for _ in event_begin:
-                remove_events.append(name)
-    if remove_events:
-        cleaned_events[:] = [name for name in cleaned_events if name not in remove_events]
-
-
-def update_cleaning(events: List[Dict[str, Any]], cleaned_events: List[str], target_name: str):
-    for event in events:
-        if event.get('name') == target_name and event.get('name') not in cleaned_events:
-            event['cleaning'] = True
-            cleaned_events.append(event.get('name'))
 
 
 def download_calendar(user_id: int, calendar_id: int):
@@ -324,9 +327,10 @@ async def upload_calendar_from_url(user_id: int, apartment_id: int, data: NewCal
                 if d.get('wrong_data'):
                     raise BadRequestException(INVALID_CALENDAR_DATA)
                 if not calendar:
-                    calendar =find_calendar_by_url(
-                        session=session, url=str(data.url), apartment_id=apartment_id,user_id=user_id) or\
-                              find_calendar_by_apartment_id(session=session, apartment_id=apartment_id, user_id=user_id)
+                    calendar = find_calendar_by_url(
+                        session=session, url=str(data.url), apartment_id=apartment_id, user_id=user_id) or \
+                               find_calendar_by_apartment_id(session=session, apartment_id=apartment_id,
+                                                             user_id=user_id)
                     if not calendar:
                         calendar = calendar_mapper(apartment=apartment, data=d, url=str(data.url))
                         session.add(calendar)
